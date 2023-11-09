@@ -5,7 +5,6 @@
 # This file is part of the jupyterlab_templates library, distributed under the terms of
 # the Apache License 2.0.  The full license can be found in the LICENSE file.
 #
-import fnmatch
 import json
 import os
 import os.path
@@ -13,13 +12,17 @@ import jupyter_core.paths
 import tornado.web
 
 from io import open
-from notebook.base.handlers import IPythonHandler
-from notebook.utils import url_path_join
+from fnmatch import fnmatch
+from jupyter_server.base.handlers import JupyterHandler
+from jupyter_server.utils import url_path_join
+
+TEMPLATES_IGNORE_FILE = ".jupyterlab_templates_ignore"
 
 
 class TemplatesLoader:
-    def __init__(self, template_dirs):
+    def __init__(self, template_dirs, allowed_extensions=None):
         self.template_dirs = template_dirs
+        self.allowed_extensions = allowed_extensions or ["*.ipynb"]
 
     def get_templates(self):
         templates = {}
@@ -35,7 +38,12 @@ class TemplatesLoader:
                     # Skip top level
                     continue
 
-                for filename in fnmatch.filter(filenames, "*.ipynb"):
+                if TEMPLATES_IGNORE_FILE in filenames:
+                    # skip this very directory (subdirectories will still be considered)
+                    continue
+
+                _files = [x for x in filenames if any(fnmatch(x, y) for y in self.allowed_extensions)]
+                for filename in _files:
                     if ".ipynb_checkpoints" not in dirname:
                         files.append(
                             (
@@ -75,7 +83,7 @@ class TemplatesLoader:
         return templates, template_by_path
 
 
-class TemplatesHandler(IPythonHandler):
+class TemplatesHandler(JupyterHandler):
     def initialize(self, loader):
         self.loader = loader
 
@@ -88,7 +96,7 @@ class TemplatesHandler(IPythonHandler):
             self.set_status(404)
 
 
-class TemplateNamesHandler(IPythonHandler):
+class TemplateNamesHandler(JupyterHandler):
     def initialize(self, loader):
         self.loader = loader
 
@@ -105,9 +113,9 @@ def load_jupyter_server_extension(nb_server_app):
         nb_server_app (NotebookWebApplication): handle to the Notebook webserver instance.
     """
     web_app = nb_server_app.web_app
-    template_dirs = nb_server_app.config.get("JupyterLabTemplates", {}).get(
-        "template_dirs", []
-    )
+    template_dirs = nb_server_app.config.get("JupyterLabTemplates", {}).get("template_dirs", [])
+
+    allowed_extensions = nb_server_app.config.get("JupyterLabTemplates", {}).get("allowed_extensions", ["*.ipynb"])
 
     if nb_server_app.config.get("JupyterLabTemplates", {}).get("include_default", True):
         template_dirs.insert(0, os.path.join(os.path.dirname(__file__), "templates"))
@@ -115,27 +123,14 @@ def load_jupyter_server_extension(nb_server_app):
     base_url = web_app.settings["base_url"]
 
     host_pattern = ".*$"
-    print(
-        "Installing jupyterlab_templates handler on path %s"
-        % url_path_join(base_url, "templates")
-    )
+    nb_server_app.log.info("Installing jupyterlab_templates handler on path %s" % url_path_join(base_url, "templates"))
 
-    if nb_server_app.config.get("JupyterLabTemplates", {}).get(
-        "include_core_paths", True
-    ):
-        template_dirs.extend(
-            [
-                os.path.join(x, "notebook_templates")
-                for x in jupyter_core.paths.jupyter_path()
-            ]
-        )
-    print("Search paths:\n\t%s" % "\n\t".join(template_dirs))
+    if nb_server_app.config.get("JupyterLabTemplates", {}).get("include_core_paths", True):
+        template_dirs.extend([os.path.join(x, "notebook_templates") for x in jupyter_core.paths.jupyter_path()])
+    nb_server_app.log.info("Search paths:\n\t%s" % "\n\t".join(template_dirs))
 
-    loader = TemplatesLoader(template_dirs)
-    print(
-        "Available templates:\n\t%s"
-        % "\n\t".join(t for t in loader.get_templates()[1].keys())
-    )
+    loader = TemplatesLoader(template_dirs, allowed_extensions=allowed_extensions)
+    nb_server_app.log.info("Available templates:\n\t%s" % "\n\t".join(t for t in loader.get_templates()[1].keys()))
 
     web_app.add_handlers(
         host_pattern,
