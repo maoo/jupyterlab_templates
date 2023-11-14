@@ -7,7 +7,7 @@ on:
     paths:
       - 'python/requirements.txt'
       - 'python/pyproject.toml'
-      - '.github/workflows/license-scanning-python.yml'
+      - '.github/workflows/python.yml'
 
 env:
   ALLOW_LICENSES: "MIT License;Apache Software License;BSD License"
