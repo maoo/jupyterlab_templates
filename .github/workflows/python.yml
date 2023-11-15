@@ -30,4 +30,4 @@ jobs:
       - name: Run pip-licenses with system
         run: pip-licenses --with-system
       - name: Scan for licenses
-        run: pip-licenses --allow-only="${{ env.ALLOW_LICENSES }}"
+        run: pip-licenses --with-system --allow-only="${{ env.ALLOW_LICENSES }}"
